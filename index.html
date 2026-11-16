@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prazo de Parcelas – Boletos</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --bg:#f5f6f8; --card:#fff; --ink:#1d2433; --muted:#6b7385; --line:#e3e6ec;
@@ -20,8 +22,10 @@
   input,select,button{font:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;color:var(--ink)}
   button{cursor:pointer;background:var(--accent);color:#fff;border-color:var(--accent)}
   button.sec{background:#fff;color:var(--ink);border-color:var(--line)}
-  button:hover{filter:brightness(.95)}
-  #url{width:320px}
+  button.danger{background:var(--bad);border-color:var(--bad)}
+  button:disabled{opacity:.5;cursor:default}
+  button:hover:not(:disabled){filter:brightness(.95)}
+  #base{width:300px}
   main{padding:20px 24px;max-width:1400px;margin:0 auto}
   .status{font-size:12px;color:var(--muted);margin-bottom:12px}
   .status.err{color:var(--bad)}
@@ -33,7 +37,8 @@
   .kpi.bad .v{color:var(--bad)}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
   @media(max-width:900px){.row{grid-template-columns:1fr}}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .row .panel{margin-bottom:0}
   .panel h2{font-size:14px;margin:0 0 12px}
   .bars .b{display:grid;grid-template-columns:90px 1fr 120px;gap:10px;align-items:center;margin:8px 0;font-size:13px}
   .track{background:#eef0f4;border-radius:6px;height:18px;overflow:hidden}
@@ -43,13 +48,14 @@
   .filters label{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
   table{width:100%;border-collapse:collapse}
   th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-  th{font-size:12px;color:var(--muted);font-weight:600;background:#fafbfc;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap}
+  th{font-size:12px;color:var(--muted);font-weight:600;background:#fafbfc;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap;z-index:1}
   td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
   tr.has90>td:first-child{box-shadow:inset 3px 0 0 var(--bad)}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chip{border-radius:8px;padding:4px 8px;font-size:12px;line-height:1.3;border:1px solid transparent;font-variant-numeric:tabular-nums}
+  .chip{border-radius:8px;padding:4px 6px 4px 8px;font-size:12px;line-height:1.3;border:1px solid transparent;font-variant-numeric:tabular-nums;display:flex;gap:8px;align-items:center}
   .chip b{font-weight:650}
   .chip small{display:block;color:inherit;opacity:.8}
+  .chip.sel{outline:2px solid var(--accent);outline-offset:1px}
   .c-ok{background:var(--ok-bg);color:var(--ok)}
   .c-warn{background:var(--warn-bg);color:var(--warn)}
   .c-bad{background:var(--bad-bg);color:var(--bad);border-color:#f0a9a2;font-weight:600}
@@ -60,6 +66,18 @@
   .lg-ok::before{background:var(--ok)} .lg-warn::before{background:#e0a020} .lg-bad::before{background:var(--bad)}
   .empty{padding:30px;text-align:center;color:var(--muted)}
   .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:12px;color:var(--muted)}
+  input.port{width:58px;padding:3px 6px;font-size:12px;text-transform:uppercase;font-weight:600;text-align:center;letter-spacing:.5px;background:#fff;color:var(--ink)}
+  input.port.nota{width:64px;padding:6px}
+  input.port.inv{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
+  input.port.set{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+  .ptab td,.ptab th{padding:7px 10px}
+  .ptab th{position:static;cursor:default}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+  .hint{font-size:12px;color:var(--muted)}
+  .modal-bg{position:fixed;inset:0;background:rgba(20,24,35,.45);display:none;align-items:center;justify-content:center;z-index:10}
+  .modal{background:#fff;border-radius:12px;padding:20px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+  .modal h3{margin:0 0 10px;font-size:16px}
+  .modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 </style>
 </head>
 <body>
@@ -69,7 +87,7 @@
     <div class="sub">Notas fiscais, parcelas e dias de prazo (vencimento − emissão). Parcelas acima de 90 dias em destaque.</div>
   </div>
   <div class="src">
-    <input id="url" placeholder="URL do webhook n8n">
+    <input id="base" placeholder="Endereço do n8n (webhooks)">
     <button id="btnLoad">Atualizar</button>
     <button class="sec" id="btnFile">Importar arquivo</button>
     <input type="file" id="file" accept=".xlsx,.xls,.csv,.json" hidden>
@@ -93,11 +111,22 @@
   </div>
 
   <div class="panel">
+    <h2>Portadores atribuídos</h2>
+    <div id="portResumo"></div>
+    <div class="actions">
+      <button id="btnGravar">Gravar portadores no sistema</button>
+      <button class="sec" id="btnLimpar">Limpar atribuições</button>
+      <span class="hint">Digite o portador (3 caracteres) na coluna da nota para todas as parcelas, ou em cada parcela. Só parcelas com portador atual "bol" são alteradas.</span>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="filters">
-      <input id="fBusca" placeholder="Buscar cliente ou nº da nota" style="width:260px">
+      <input id="fBusca" placeholder="Buscar cliente ou nº da nota" style="width:240px">
       <label>Emissão de <input type="date" id="fIni"></label>
       <label>até <input type="date" id="fFim"></label>
-      <label><input type="checkbox" id="f90"> Só notas com parcela &gt; 90 dias</label>
+      <label><input type="checkbox" id="f90"> Só com parcela &gt; 90 dias</label>
+      <label><input type="checkbox" id="fPort"> Só com portador atribuído</label>
       <button id="btnXlsx">Exportar Excel (todas as parcelas)</button>
       <button class="sec" id="btnCsv">Exportar parcelas &gt; 90 (CSV)</button>
       <div class="legend"><span class="lg-ok">até 60 d</span><span class="lg-warn">61–90 d</span><span class="lg-bad">&gt; 90 d</span></div>
@@ -111,39 +140,56 @@
           <th data-k="qtd" class="r">Parc.</th>
           <th data-k="valor" class="r">Valor total</th>
           <th data-k="maxDias" class="r">Maior prazo</th>
-          <th>Parcelas (vencimento · dias · valor)</th>
+          <th>Portador da nota</th>
+          <th>Parcelas (vencimento · dias · valor · portador)</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
+    <datalist id="dlPort"></datalist>
     <div class="pager" id="pager"></div>
   </div>
 </main>
 
+<div class="modal-bg" id="modalBg"><div class="modal">
+  <h3 id="mTitle"></h3>
+  <div id="mBody"></div>
+  <div class="btns"><button class="sec" id="mCancel">Cancelar</button><button id="mOk">Confirmar</button></div>
+</div></div>
+
 <script>
 const LIMITE = 90;
-const DEFAULT_URL = "http://localhost:5678/webhook/parcelas-boleto";
+const DEFAULT_BASE = "http://localhost:5678/webhook";
+const EP_LISTA = "parcelas-boleto";
+const EP_PORTADORES = "portadores";
+const EP_GRAVAR = "parcelas-boleto-portador";
 const PAGE = 200;
+const K_ATRIB = "parcelas_portador_atrib_v1";
 
 let rows = [];      // parcelas normalizadas
 let notas = [];     // agrupadas
+let portadores = new Map(); // código -> nome
+let atrib = {};     // id (Cd_lancamento) -> portador
 let sortK = "emissao", sortDir = -1, page = 0;
 
 const $ = id => document.getElementById(id);
 const brl = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const int = v => v.toLocaleString("pt-BR");
 const fmtD = d => d ? d.toLocaleDateString("pt-BR",{timeZone:"UTC"}) : "—";
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const PORT_RE = /^[A-Z0-9]{3}$/;
 
 function store(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
 function load(k){ try{ return localStorage.getItem(k) }catch(e){ return null } }
+try{ atrib = JSON.parse(load(K_ATRIB)||"{}") || {}; }catch(e){ atrib = {}; }
+const saveAtrib = ()=>store(K_ATRIB, JSON.stringify(atrib));
+const base = ()=>$("base").value.trim().replace(/\/+$/,"");
 
 // ---------- normalização ----------
 function toDate(v){
   if(v==null || v==="") return null;
   if(v instanceof Date) return new Date(Date.UTC(v.getFullYear(),v.getMonth(),v.getDate()));
-  if(typeof v==="number"){ // serial do Excel
-    return new Date(Date.UTC(1899,11,30) + Math.round(v)*86400000);
-  }
+  if(typeof v==="number") return new Date(Date.UTC(1899,11,30) + Math.round(v)*86400000);
   const s = String(v).trim();
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(m) return new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));
@@ -162,7 +208,6 @@ function pick(o, name){
   const k = Object.keys(o).find(k => k.toLowerCase().replace(/^.*\./,"") === name.toLowerCase());
   return k===undefined ? undefined : o[k];
 }
-
 function normalize(raw){
   const out = [];
   for(const r of raw){
@@ -170,43 +215,52 @@ function normalize(raw){
     const venc = toDate(pick(r,"Dt_vencimento"));
     const nf = String(pick(r,"Nf") ?? "").trim();
     if(!nf) continue;
-    const dias = (emissao && venc) ? Math.round((venc - emissao)/86400000) : null;
+    const idRaw = pick(r,"Cd_lancamento");
     out.push({
-      nf, emissao, venc, dias,
+      id: idRaw==null || idRaw==="" ? null : String(idRaw).trim().replace(/\.0+$/,""),
+      nf, serie: String(pick(r,"Serie") ?? "").trim(), emissao, venc,
+      dias: (emissao && venc) ? Math.round((venc - emissao)/86400000) : null,
       compl: String(pick(r,"Complemento") ?? "").trim(),
       cliente: String(pick(r,"Nome_completo") ?? "").trim(),
-      valor: toNum(pick(r,"Valor"))
+      valor: toNum(pick(r,"Valor")),
+      portAtual: String(pick(r,"Cd_portador") ?? "").trim()
     });
   }
   return out;
 }
-
 function group(){
   const map = new Map();
   for(const p of rows){
-    const key = p.nf + "|" + (p.emissao?+p.emissao:"") + "|" + p.cliente;
-    if(!map.has(key)) map.set(key,{nf:p.nf, emissao:p.emissao, cliente:p.cliente, parcelas:[]});
+    const key = [p.nf,p.serie,p.emissao?+p.emissao:"",p.cliente].join("|");
+    if(!map.has(key)) map.set(key,{key, nf:p.nf, serie:p.serie, emissao:p.emissao, cliente:p.cliente, parcelas:[]});
     map.get(key).parcelas.push(p);
   }
   notas = [...map.values()].map(n=>{
     n.parcelas.sort((a,b)=>(a.venc||0)-(b.venc||0));
-    n.parcelas.forEach((p,i)=>{ p.seq = i+1; p.tot = n.parcelas.length; });
+    n.parcelas.forEach((p,i)=>{ p.seq = i+1; p.tot = n.parcelas.length; p.nota = n; });
     n.qtd = n.parcelas.length;
     n.valor = n.parcelas.reduce((s,p)=>s+p.valor,0);
     n.maxDias = Math.max(...n.parcelas.map(p=>p.dias ?? -Infinity));
     n.has90 = n.parcelas.some(p=>p.dias!=null && p.dias>LIMITE);
     return n;
   });
+  // descarta atribuições de parcelas que não estão mais na lista (já gravadas ou removidas)
+  const ids = new Set(rows.map(p=>p.id).filter(Boolean));
+  for(const k of Object.keys(atrib)) if(!ids.has(k)) delete atrib[k];
+  saveAtrib();
 }
+const portDe = p => p.id ? (atrib[p.id]||"") : "";
+const notaPort = n => { const v = n.parcelas.map(portDe); return v.every(x=>x===v[0]) ? v[0] : "*"; };
 
 // ---------- filtros ----------
 function filtered(){
   const q = $("fBusca").value.trim().toLowerCase();
   const ini = $("fIni").value ? toDate($("fIni").value) : null;
   const fim = $("fFim").value ? toDate($("fFim").value) : null;
-  const so90 = $("f90").checked;
+  const so90 = $("f90").checked, soPort = $("fPort").checked;
   return notas.filter(n=>{
     if(so90 && !n.has90) return false;
+    if(soPort && !n.parcelas.some(portDe)) return false;
     if(ini && (!n.emissao || n.emissao < ini)) return false;
     if(fim && (!n.emissao || n.emissao > fim)) return false;
     if(q && !(n.cliente.toLowerCase().includes(q) || n.nf.toLowerCase().includes(q))) return false;
@@ -216,6 +270,8 @@ function filtered(){
 
 // ---------- render ----------
 function cls(d){ return d==null ? "c-ok" : d>LIMITE ? "c-bad" : d>60 ? "c-warn" : "c-ok"; }
+function portClass(v){ if(!v) return ""; if(!PORT_RE.test(v) || (portadores.size && !portadores.has(v))) return "inv"; return "set"; }
+function portTitle(v){ if(!v) return "Portador (3 caracteres)"; if(!PORT_RE.test(v)) return "Use 3 letras ou números"; if(portadores.size && !portadores.has(v)) return "Portador não cadastrado"; return portadores.get(v) || v; }
 
 function render(){
   const ns = filtered();
@@ -237,13 +293,11 @@ function render(){
     ["Valor em parcelas > 90 d", brl(v90) + (vTot?` <span style="font-size:13px;font-weight:500">(${(v90/vTot*100).toFixed(1)}%)</span>`:""), true],
   ].map(([l,v,b])=>`<div class="kpi${b?" bad":""}"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
 
-  // faixas
   const fx = [["0–30 d",0,30,"#2f7d5b"],["31–60 d",31,60,"#5fa883"],["61–90 d",61,90,"#e0a020"],["> 90 d",91,1e9,"#b42318"]];
   const cnt = fx.map(([l,a,b,c])=>{ const it = comDias.filter(p=>p.dias>=a && p.dias<=b); return {l,c,n:it.length,v:it.reduce((s,p)=>s+p.valor,0)}; });
   const maxN = Math.max(1,...cnt.map(c=>c.n));
   $("faixas").innerHTML = cnt.map(c=>`<div class="b"><div>${c.l}</div><div class="track"><div class="fill" style="width:${c.n/maxN*100}%;background:${c.c}"></div></div><div class="num">${int(c.n)} · ${brl(c.v)}</div></div>`).join("");
 
-  // top clientes > 90
   const byCli = new Map();
   for(const p of p90){ byCli.set(p.cliente,(byCli.get(p.cliente)||0)+p.valor); }
   const top = [...byCli.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -251,7 +305,6 @@ function render(){
   $("topCli").innerHTML = top.length ? top.map(([c,v])=>`<div class="b" style="grid-template-columns:1fr 1fr 110px"><div title="${esc(c)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c)}</div><div class="track"><div class="fill" style="width:${v/maxV*100}%;background:#b42318"></div></div><div class="num">${brl(v)}</div></div>`).join("")
     : `<div class="empty">Nenhuma parcela acima de ${LIMITE} dias no filtro atual.</div>`;
 
-  // tabela
   ns.sort((a,b)=>{
     let x=a[sortK], y=b[sortK];
     if(x instanceof Date||y instanceof Date){ x=x?+x:0; y=y?+y:0; }
@@ -261,8 +314,11 @@ function render(){
   const pages = Math.max(1,Math.ceil(ns.length/PAGE));
   if(page>=pages) page = pages-1;
   const slice = ns.slice(page*PAGE,(page+1)*PAGE);
+  const semId = !rows.some(p=>p.id);
 
-  $("tbody").innerHTML = slice.length ? slice.map(n=>`
+  $("tbody").innerHTML = slice.length ? slice.map(n=>{
+    const np = notaPort(n);
+    return `
     <tr class="${n.has90?"has90":""}">
       <td><b>${esc(n.nf)}</b>${n.has90?'<span class="tag90">&gt; 90 d</span>':""}</td>
       <td>${fmtD(n.emissao)}</td>
@@ -270,12 +326,15 @@ function render(){
       <td class="r">${n.qtd}</td>
       <td class="r">${brl(n.valor)}</td>
       <td class="r" style="${n.has90?"color:var(--bad);font-weight:650":""}">${isFinite(n.maxDias)?n.maxDias+" d":"—"}</td>
-      <td><div class="chips">${n.parcelas.map(p=>`
-        <div class="chip ${cls(p.dias)}" title="${esc(p.compl)}">
-          <b>${p.seq}/${p.tot}</b> · ${fmtD(p.venc)} · <b>${p.dias??"—"} d</b>
-          <small>${brl(p.valor)}${p.compl?" · "+esc(p.compl):""}</small>
-        </div>`).join("")}</div></td>
-    </tr>`).join("") : `<tr><td colspan="7" class="empty">Nenhuma nota encontrada.</td></tr>`;
+      <td><input class="port nota ${np==="*"?"":portClass(np)}" data-nota="${esc(n.key)}" maxlength="3" list="dlPort"
+           value="${np==="*"?"":esc(np)}" placeholder="${np==="*"?"vários":"—"}" title="${np==="*"?"Parcelas com portadores diferentes":esc(portTitle(np))}" ${semId?"disabled":""}></td>
+      <td><div class="chips">${n.parcelas.map(p=>{ const v = portDe(p); return `
+        <div class="chip ${cls(p.dias)} ${v?"sel":""}" title="${esc(p.compl)}">
+          <div><b>${p.seq}/${p.tot}</b> · ${fmtD(p.venc)} · <b>${p.dias??"—"} d</b>
+          <small>${brl(p.valor)}${p.compl?" · "+esc(p.compl):""}</small></div>
+          <input class="port ${portClass(v)}" data-id="${esc(p.id||"")}" maxlength="3" list="dlPort" value="${esc(v)}" placeholder="—" title="${esc(portTitle(v))}" ${p.id?"":"disabled"}>
+        </div>`;}).join("")}</div></td>
+    </tr>`;}).join("") : `<tr><td colspan="8" class="empty">Nenhuma nota encontrada.</td></tr>`;
 
   $("pager").innerHTML = pages>1 ? `
     <button class="sec" ${page===0?"disabled":""} onclick="page--;render()">‹</button>
@@ -285,32 +344,188 @@ function render(){
   document.querySelectorAll("th[data-k]").forEach(th=>{
     th.textContent = th.textContent.replace(/ [▲▼]$/,"") + (th.dataset.k===sortK ? (sortDir>0?" ▲":" ▼") : "");
   });
+  renderResumo();
 }
-function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
-function setData(raw, origem){
+// ---------- atribuição de portador ----------
+function gruposPorPortador(){
+  const g = new Map();
+  for(const p of rows){
+    const v = portDe(p); if(!v) continue;
+    if(!g.has(v)) g.set(v,[]);
+    g.get(v).push(p);
+  }
+  return g;
+}
+function renderResumo(){
+  const g = gruposPorPortador();
+  const semId = rows.length && !rows.some(p=>p.id);
+  if(!g.size){
+    $("portResumo").innerHTML = `<div class="hint">${semId ? "Os dados carregados não trazem o Cd_lancamento: atualize pelo n8n para poder atribuir portadores." : "Nenhum portador atribuído ainda."}</div>`;
+    $("btnGravar").disabled = true; $("btnLimpar").disabled = true; return;
+  }
+  let inval = 0;
+  $("portResumo").innerHTML = `<table class="ptab"><thead><tr><th>Portador</th><th>Nome</th><th class="r">Notas</th><th class="r">Parcelas</th><th class="r">Valor</th><th></th></tr></thead><tbody>${
+    [...g.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([k,ps])=>{
+      const ok = portClass(k)==="set"; if(!ok) inval++;
+      const nNotas = new Set(ps.map(p=>p.nota.key)).size;
+      return `<tr><td><b>${esc(k)}</b></td><td>${ok ? esc(portadores.get(k)||"") : `<span style="color:var(--bad)">${esc(portTitle(k))}</span>`}</td>
+        <td class="r">${nNotas}</td><td class="r">${ps.length}</td><td class="r">${brl(ps.reduce((s,p)=>s+p.valor,0))}</td>
+        <td><button class="sec" onclick="gerarPdf('${esc(k)}')">Gerar PDF</button></td></tr>`;
+    }).join("")}</tbody></table>${inval?`<div class="hint" style="color:var(--bad);margin-top:6px">Corrija os portadores inválidos antes de gravar.</div>`:""}`;
+  $("btnGravar").disabled = inval>0; $("btnLimpar").disabled = false;
+}
+function setPort(p, v){ if(!p.id) return; if(v) atrib[p.id] = v; else delete atrib[p.id]; }
+
+$("tbody").addEventListener("input", e=>{
+  const t = e.target; if(!t.classList.contains("port")) return;
+  const v = t.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,3);
+  if(t.value!==v) t.value = v;
+  if(t.dataset.nota!==undefined){
+    const n = notas.find(x=>x.key===t.dataset.nota); if(!n) return;
+    n.parcelas.forEach(p=>setPort(p,v));
+    t.closest("tr").querySelectorAll("input.port[data-id]").forEach(i=>{ i.value=v; i.className="port "+portClass(v); i.closest(".chip").classList.toggle("sel",!!v); });
+  }else{
+    const p = rows.find(x=>x.id===t.dataset.id); if(!p) return;
+    setPort(p,v); t.closest(".chip").classList.toggle("sel",!!v);
+    const np = notaPort(p.nota), ni = t.closest("tr").querySelector("input.port.nota");
+    ni.value = np==="*"?"":np; ni.placeholder = np==="*"?"vários":"—"; ni.className = "port nota "+(np==="*"?"":portClass(np));
+  }
+  t.className = t.className.replace(/\b(inv|set)\b/g,"").trim()+" "+portClass(v);
+  t.title = portTitle(v);
+  saveAtrib(); renderResumo();
+});
+
+$("btnLimpar").onclick = ()=>modal("Limpar atribuições", "Remover todos os portadores digitados (nada é alterado no sistema)?", ()=>{ atrib = {}; saveAtrib(); render(); });
+
+// ---------- PDF ----------
+function gerarPdf(port, lista){
+  if(!window.jspdf){ setStatus("Não foi possível carregar o gerador de PDF (sem internet?).",true); return; }
+  const ps = lista || rows.filter(p=>portDe(p)===port);
+  if(!ps.length) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:"portrait", unit:"mm", format:"a4"});
+  const nome = portadores.get(port) || "";
+  const byNota = new Map();
+  for(const p of ps){ if(!byNota.has(p.nota.key)) byNota.set(p.nota.key,{n:p.nota, ps:[]}); byNota.get(p.nota.key).ps.push(p); }
+  const grupos = [...byNota.values()].sort((a,b)=>((a.n.emissao||0)-(b.n.emissao||0)) || a.n.nf.localeCompare(b.n.nf,"pt-BR",{numeric:true}));
+  const body = [];
+  let totSel = 0, totNotas = 0;
+  for(const {n, ps:sp} of grupos){
+    sp.sort((a,b)=>a.seq-b.seq);
+    const vSel = sp.reduce((s,p)=>s+p.valor,0);
+    totSel += vSel; totNotas += n.valor;
+    body.push([{content:`Nota ${n.nf}${n.serie?" / "+n.serie:""}  ·  Emissão ${fmtD(n.emissao)}  ·  ${n.cliente}`, colSpan:4, styles:{fontStyle:"bold", fillColor:[238,241,247]}},
+               {content:`Valor da nota: ${brl(n.valor)}`, colSpan:2, styles:{fontStyle:"bold", halign:"right", fillColor:[238,241,247]}}]);
+    for(const p of sp) body.push([`${p.seq}/${p.tot}`, p.compl||"", fmtD(p.venc), {content:p.dias??"—", styles: p.dias>LIMITE?{textColor:[180,35,24],fontStyle:"bold"}:{}}, "", {content:brl(p.valor), styles:{halign:"right"}}]);
+    body.push([{content:`Subtotal da nota ${n.nf} (${sp.length} de ${n.qtd} parcela${n.qtd>1?"s":""})`, colSpan:5, styles:{halign:"right", fontStyle:"bold"}}, {content:brl(vSel), styles:{halign:"right", fontStyle:"bold"}}]);
+  }
+  const titulo = `Notas e parcelas selecionadas para o portador "${port}"${nome?" – "+nome:""}`;
+  const gerado = new Date().toLocaleString("pt-BR");
+  doc.autoTable({
+    head:[["Parcela","Complemento","Vencimento","Dias de prazo","","Valor da parcela"]],
+    body,
+    startY: 30,
+    margin:{top:30, left:12, right:12, bottom:16},
+    styles:{fontSize:8.5, cellPadding:1.6},
+    headStyles:{fillColor:[36,87,197], textColor:255},
+    columnStyles:{0:{cellWidth:18},1:{cellWidth:28},2:{cellWidth:26},3:{cellWidth:24,halign:"right"},4:{cellWidth:"auto"},5:{cellWidth:34,halign:"right"}},
+    didDrawPage: d=>{
+      doc.setFontSize(13); doc.setFont(undefined,"bold"); doc.setTextColor(29,36,51);
+      doc.text(doc.splitTextToSize(titulo, 186), 12, 14);
+      doc.setFontSize(8.5); doc.setFont(undefined,"normal"); doc.setTextColor(107,115,133);
+      doc.text(`Gerado em ${gerado}  ·  ${grupos.length} nota(s)  ·  ${ps.length} parcela(s)  ·  Total selecionado ${brl(totSel)}`, 12, 25);
+      doc.text(`Página ${doc.internal.getNumberOfPages()}`, 198, 290, {align:"right"});
+    }
+  });
+  let y = doc.lastAutoTable.finalY + 6;
+  if(y > 260){ doc.addPage(); y = 34; }
+  doc.autoTable({
+    startY:y, margin:{left:12,right:12,top:30},
+    theme:"plain", styles:{fontSize:10, cellPadding:1.8},
+    body:[
+      ["Total de notas", String(grupos.length)],
+      ["Total de parcelas selecionadas", String(ps.length)],
+      ["Valor total das notas", brl(totNotas)],
+      [{content:"Valor total das parcelas selecionadas",styles:{fontStyle:"bold"}}, {content:brl(totSel),styles:{fontStyle:"bold"}}]
+    ],
+    columnStyles:{0:{cellWidth:80},1:{halign:"right",cellWidth:40}},
+    tableLineColor:[227,230,236], tableLineWidth:.2
+  });
+  doc.save(`portador_${port}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// ---------- gravar no sistema ----------
+$("btnGravar").onclick = ()=>{
+  const g = gruposPorPortador();
+  const linhas = [...g.entries()].map(([k,ps])=>`<li><b>${esc(k)}</b>${portadores.get(k)?" – "+esc(portadores.get(k)):""}: ${ps.length} parcela(s), ${brl(ps.reduce((s,p)=>s+p.valor,0))}</li>`).join("");
+  modal("Gravar portadores no sistema",
+    `<p>O campo <b>Cd_portador</b> da GFLANCAM será alterado nestas parcelas:</p><ul>${linhas}</ul><p class="hint">Só são alteradas parcelas que ainda estão com portador "bol". Depois de gravar, elas saem desta lista e o PDF de cada portador é baixado automaticamente.</p>`,
+    gravar);
+};
+async function gravar(){
+  const itens = rows.filter(p=>p.id && portDe(p)).map(p=>({cd_lancamento:p.id, portador:portDe(p)}));
+  if(!itens.length) return;
+  $("btnGravar").disabled = true; setStatus("Gravando portadores no sistema…");
+  try{
+    const r = await fetch(`${base()}/${EP_GRAVAR}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({itens})});
+    let j = await r.json().catch(()=>({}));
+    if(Array.isArray(j)) j = j[0]||{};
+    if(j.json) j = j.json;
+    if(!r.ok || j.status==="erro") throw new Error(j.mensagem || ("HTTP "+r.status));
+    const okIds = new Set((j.atualizadas||[]).map(x=>String(x.cd_lancamento).replace(/\.0+$/,"")));
+    const feitas = rows.filter(p=>okIds.has(p.id));
+    const porPort = new Map();
+    for(const p of feitas){ const k = atrib[p.id]; if(!porPort.has(k)) porPort.set(k,[]); porPort.get(k).push(p); }
+    for(const [k,ps] of porPort) gerarPdf(k, ps);
+    for(const id of okIds) delete atrib[id];
+    saveAtrib();
+    const ign = (j.ignoradas||[]).length;
+    await carregar(true);
+    setStatus(`${okIds.size} parcela(s) gravada(s) no sistema${ign?` · ${ign} não alterada(s) (o portador atual não era "bol" ou o lançamento não existe)`:""}.`, ign>0);
+  }catch(e){
+    setStatus("Não foi possível gravar: "+e.message, true);
+    renderResumo();
+  }
+}
+
+// ---------- modal ----------
+let mCb = null;
+function modal(t, html, cb){ $("mTitle").textContent = t; $("mBody").innerHTML = html.startsWith("<")?html:`<p>${esc(html)}</p>`; mCb = cb; $("modalBg").style.display="flex"; }
+$("mCancel").onclick = ()=>{ $("modalBg").style.display="none"; mCb=null; };
+$("mOk").onclick = ()=>{ $("modalBg").style.display="none"; const cb=mCb; mCb=null; cb&&cb(); };
+
+// ---------- dados ----------
+function setData(raw, origem, quiet){
   rows = normalize(raw);
   group(); page = 0;
-  setStatus(`${int(rows.length)} parcelas em ${int(notas.length)} notas · fonte: ${origem} · ${new Date().toLocaleString("pt-BR")}`);
+  if(!quiet) setStatus(`${int(rows.length)} parcelas em ${int(notas.length)} notas · fonte: ${origem} · ${new Date().toLocaleString("pt-BR")}`);
   render();
 }
 function setStatus(t,err){ const s=$("status"); s.textContent=t; s.className="status"+(err?" err":""); }
-
-// ---------- fontes ----------
-async function fromWebhook(){
-  const url = $("url").value.trim();
-  if(!url){ setStatus("Informe a URL do webhook.",true); return; }
-  store("parcelas_url",url);
-  setStatus("Buscando dados no n8n…");
+async function getJson(url){
+  const r = await fetch(url); if(!r.ok) throw new Error("HTTP "+r.status);
+  let d = await r.json();
+  if(!Array.isArray(d)) d = d.data || d.rows || d.recordset || [d];
+  return d.map(x=>x && x.json ? x.json : x);
+}
+async function carregarPortadores(){
   try{
-    const r = await fetch(url);
-    if(!r.ok) throw new Error("HTTP "+r.status);
-    let d = await r.json();
-    if(!Array.isArray(d)) d = d.data || d.rows || d.recordset || [d];
-    d = d.map(x=>x && x.json ? x.json : x);
-    setData(d,"webhook n8n");
+    const d = await getJson(`${base()}/${EP_PORTADORES}`);
+    portadores = new Map(d.map(x=>[String(pick(x,"Cd_portador")||"").trim().toUpperCase(), String(pick(x,"Nome")||"").trim()]).filter(x=>x[0]));
+    $("dlPort").innerHTML = [...portadores].map(([k,n])=>`<option value="${esc(k)}">${esc(n)}</option>`).join("");
+  }catch(e){ portadores = new Map(); }
+}
+async function carregar(quiet){
+  const b = base();
+  if(!b){ setStatus("Informe o endereço do n8n.",true); return; }
+  store("parcelas_base",b);
+  if(!quiet) setStatus("Buscando dados no n8n…");
+  try{
+    const [d] = await Promise.all([getJson(`${b}/${EP_LISTA}`), carregarPortadores()]);
+    setData(d,"webhook n8n",quiet);
   }catch(e){
-    setStatus("Não foi possível ler o webhook ("+e.message+"). Confira se o n8n está rodando, se o workflow está ativo e se o CORS está liberado.",true);
+    setStatus("Não foi possível ler o n8n ("+e.message+"). Confira se o n8n está rodando e se os workflows estão ativos.",true);
   }
 }
 
@@ -324,64 +539,48 @@ $("file").onchange = async e=>{
     }else{
       if(typeof XLSX==="undefined") throw new Error("leitor de planilhas não carregou (sem internet?)");
       const wb = XLSX.read(await f.arrayBuffer(),{type:"array",cellDates:true});
-      const d = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
-      setData(d,f.name);
+      setData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""}),f.name);
     }
   }catch(err){ setStatus("Erro ao ler o arquivo: "+err.message,true); }
   e.target.value="";
-};
-
-$("btnCsv").onclick = ()=>{
-  const ps = filtered().flatMap(n=>n.parcelas).filter(p=>p.dias!=null && p.dias>LIMITE);
-  const lin = [["Nota","Emissao","Cliente","Parcela","Complemento","Vencimento","Dias","Valor"].join(";")];
-  for(const p of ps) lin.push([p.nf,fmtD(p.emissao),'"'+p.cliente.replace(/"/g,'""')+'"',p.seq+"/"+p.tot,'"'+p.compl.replace(/"/g,'""')+'"',fmtD(p.venc),p.dias,p.valor.toFixed(2).replace(".",",")].join(";"));
-  const blob = new Blob(["﻿"+lin.join("\n")],{type:"text/csv;charset=utf-8"});
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "parcelas_acima_90_dias.csv"; a.click();
 };
 
 $("btnXlsx").onclick = ()=>{
   if(typeof XLSX==="undefined"){ setStatus("Não foi possível carregar o gerador de Excel (sem internet?).",true); return; }
   const ns = filtered().slice().sort((a,b)=>((a.emissao||0)-(b.emissao||0)) || a.nf.localeCompare(b.nf,"pt-BR",{numeric:true}));
   const dt = d => d ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : null;
-  const linhas = [["Nota","Emissão","Cliente","Parcela","Complemento","Vencimento","Dias de prazo","Acima de 90 dias","Valor"]];
+  const linhas = [["Nota","Série","Emissão","Cliente","Parcela","Complemento","Vencimento","Dias de prazo","Acima de 90 dias","Valor","Lançamento","Portador atribuído"]];
   for(const n of ns) for(const p of n.parcelas)
-    linhas.push([isNaN(+n.nf)?n.nf:+n.nf, dt(n.emissao), n.cliente, `${p.seq}/${p.tot}`, p.compl, dt(p.venc), p.dias, (p.dias!=null && p.dias>LIMITE)?"Sim":"Não", p.valor]);
+    linhas.push([isNaN(+n.nf)?n.nf:+n.nf, n.serie, dt(n.emissao), n.cliente, `${p.seq}/${p.tot}`, p.compl, dt(p.venc), p.dias, (p.dias!=null && p.dias>LIMITE)?"Sim":"Não", p.valor, p.id?+p.id:"", portDe(p)]);
   const ws = XLSX.utils.aoa_to_sheet(linhas,{cellDates:true});
   for(let r=1;r<linhas.length;r++){
-    for(const c of [1,5]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]) ws[ref].z="dd/mm/yyyy"; }
-    const v=XLSX.utils.encode_cell({r,c:8}); if(ws[v]) ws[v].z="#,##0.00";
+    for(const c of [2,6]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]) ws[ref].z="dd/mm/yyyy"; }
+    const v=XLSX.utils.encode_cell({r,c:9}); if(ws[v]) ws[v].z="#,##0.00";
   }
-  ws["!cols"] = [{wch:10},{wch:11},{wch:40},{wch:8},{wch:14},{wch:11},{wch:13},{wch:16},{wch:14}];
-  ws["!autofilter"] = {ref: XLSX.utils.encode_range({s:{r:0,c:0},e:{r:linhas.length-1,c:8}})};
+  ws["!cols"] = [{wch:10},{wch:7},{wch:11},{wch:40},{wch:8},{wch:14},{wch:11},{wch:13},{wch:16},{wch:14},{wch:12},{wch:18}];
+  ws["!autofilter"] = {ref: XLSX.utils.encode_range({s:{r:0,c:0},e:{r:linhas.length-1,c:linhas[0].length-1}})};
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Parcelas");
-  const hoje = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `parcelas_boleto_${hoje}.xlsx`);
+  XLSX.writeFile(wb, `parcelas_boleto_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-$("btnLoad").onclick = fromWebhook;
-["fBusca","fIni","fFim","f90"].forEach(id=>$(id).addEventListener("input",()=>{page=0;render();}));
+$("btnCsv").onclick = ()=>{
+  const ps = filtered().flatMap(n=>n.parcelas).filter(p=>p.dias!=null && p.dias>LIMITE);
+  const q = s => '"'+String(s).replace(/"/g,'""')+'"';
+  const lin = [["Nota","Emissao","Cliente","Parcela","Complemento","Vencimento","Dias","Valor"].join(";")];
+  for(const p of ps) lin.push([p.nf,fmtD(p.emissao),q(p.cliente),p.seq+"/"+p.tot,q(p.compl),fmtD(p.venc),p.dias,p.valor.toFixed(2).replace(".",",")].join(";"));
+  const blob = new Blob(["﻿"+lin.join("\n")],{type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "parcelas_acima_90_dias.csv"; a.click();
+};
+
+$("btnLoad").onclick = ()=>carregar();
+["fBusca","fIni","fFim","f90","fPort"].forEach(id=>$(id).addEventListener("input",()=>{page=0;render();}));
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{
   const k = th.dataset.k; sortDir = (sortK===k) ? -sortDir : (k==="cliente"||k==="nf"?1:-1); sortK = k; render();
 });
 
-// ---------- dados de exemplo (só aparecem até carregar os reais) ----------
-function demo(){
-  const cli = ["Comercial Alfa Ltda","Distribuidora Beta S/A","Mercado Gama","Atacado Delta ME","Loja Épsilon","Casa Zeta Ltda"];
-  const prazos = [[30],[30,60],[30,60,90],[28,56,84],[30,60,90,120],[45,90,135],[60]];
-  const out=[]; let nf=10500;
-  for(let i=0;i<60;i++){
-    const em = new Date(Date.UTC(2026,7+Math.floor(i/20),1+(i*3)%27));
-    const pz = prazos[i%prazos.length]; const tot = 1500+((i*733)%9000);
-    pz.forEach((d,j)=>out.push({Dt_emissao:em.toISOString(),Nf:nf,Complemento:`Parcela ${j+1}/${pz.length}`,Nome_completo:cli[i%cli.length],Valor:+(tot/pz.length).toFixed(2),Dt_vencimento:new Date(+em+d*86400000).toISOString()}));
-    nf++;
-  }
-  return out;
-}
-
-$("url").value = load("parcelas_url") || DEFAULT_URL;
-setData(demo(),"dados de exemplo");
-setStatus("Mostrando dados de exemplo. Clique em Atualizar para buscar no n8n ou importe um arquivo exportado da consulta.");
-fromWebhook();
+$("base").value = load("parcelas_base") || DEFAULT_BASE;
+render();
+carregar();
 </script>
 </body>
 </html>
