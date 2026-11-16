@@ -98,6 +98,7 @@
       <label>Emissão de <input type="date" id="fIni"></label>
       <label>até <input type="date" id="fFim"></label>
       <label><input type="checkbox" id="f90"> Só notas com parcela &gt; 90 dias</label>
+      <button id="btnXlsx">Exportar Excel (todas as parcelas)</button>
       <button class="sec" id="btnCsv">Exportar parcelas &gt; 90 (CSV)</button>
       <div class="legend"><span class="lg-ok">até 60 d</span><span class="lg-warn">61–90 d</span><span class="lg-bad">&gt; 90 d</span></div>
     </div>
@@ -336,6 +337,25 @@ $("btnCsv").onclick = ()=>{
   for(const p of ps) lin.push([p.nf,fmtD(p.emissao),'"'+p.cliente.replace(/"/g,'""')+'"',p.seq+"/"+p.tot,'"'+p.compl.replace(/"/g,'""')+'"',fmtD(p.venc),p.dias,p.valor.toFixed(2).replace(".",",")].join(";"));
   const blob = new Blob(["﻿"+lin.join("\n")],{type:"text/csv;charset=utf-8"});
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "parcelas_acima_90_dias.csv"; a.click();
+};
+
+$("btnXlsx").onclick = ()=>{
+  if(typeof XLSX==="undefined"){ setStatus("Não foi possível carregar o gerador de Excel (sem internet?).",true); return; }
+  const ns = filtered().slice().sort((a,b)=>((a.emissao||0)-(b.emissao||0)) || a.nf.localeCompare(b.nf,"pt-BR",{numeric:true}));
+  const dt = d => d ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : null;
+  const linhas = [["Nota","Emissão","Cliente","Parcela","Complemento","Vencimento","Dias de prazo","Acima de 90 dias","Valor"]];
+  for(const n of ns) for(const p of n.parcelas)
+    linhas.push([isNaN(+n.nf)?n.nf:+n.nf, dt(n.emissao), n.cliente, `${p.seq}/${p.tot}`, p.compl, dt(p.venc), p.dias, (p.dias!=null && p.dias>LIMITE)?"Sim":"Não", p.valor]);
+  const ws = XLSX.utils.aoa_to_sheet(linhas,{cellDates:true});
+  for(let r=1;r<linhas.length;r++){
+    for(const c of [1,5]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]) ws[ref].z="dd/mm/yyyy"; }
+    const v=XLSX.utils.encode_cell({r,c:8}); if(ws[v]) ws[v].z="#,##0.00";
+  }
+  ws["!cols"] = [{wch:10},{wch:11},{wch:40},{wch:8},{wch:14},{wch:11},{wch:13},{wch:16},{wch:14}];
+  ws["!autofilter"] = {ref: XLSX.utils.encode_range({s:{r:0,c:0},e:{r:linhas.length-1,c:8}})};
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Parcelas");
+  const hoje = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `parcelas_boleto_${hoje}.xlsx`);
 };
 
 $("btnLoad").onclick = fromWebhook;
